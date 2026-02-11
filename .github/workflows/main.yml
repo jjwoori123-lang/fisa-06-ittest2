@@ -1,35 +1,62 @@
-name: Incremental Data Pipeline
+name: Dynamic API Incremental Pipeline
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # 수동으로도 실행 가능하게 설정
+  workflow_dispatch:
 
 jobs:
-  update-json:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Fetch and Update JSON
+      - name: Fetch Dynamic API and Update
         run: |
-          FILE_PATH="/tmp/전진우_test.json"
-          TARGET_URL="https://jsonplaceholder.typicode.com/todos/"
+          # 1. 환경 설정 (본인이름 수정 필요)
+          FILE_NAME="본인이름_test.json"
+          TMP_PATH="/tmp/$FILE_NAME"
+          
+          # 2. i(현재시간) 계산 및 동적 URL 생성 (i+1)
+          I_TIME=$(date +%s)
+          VALUE_PLUS_ONE=$((I_TIME + 1))
+          TARGET_URL="https://jsonplaceholder.typicode.com/todos/$VALUE_PLUS_ONE"
+          
+          echo "Calling URL: $TARGET_URL"
 
-          # 1. 기존 파일이 없으면 배열 초기화
-          if [ ! -f "$FILE_PATH" ]; then
-            echo "[]" > "$FILE_PATH"
+          # 3. 기존 데이터 불러오기 (없으면 빈 배열 생성)
+          if [ -f "$FILE_NAME" ]; then
+            cp "$FILE_NAME" "$TMP_PATH"
+          else
+            echo "[]" > "$TMP_PATH"
           fi
 
-          # 2. API로부터 데이터 가져오기
-          NEW_DATA=$(curl -s "$TARGET_URL")
+          # 4. 동적 URL 호출하여 JSON 데이터 가져오기
+          # (서버가 응답하지 않을 경우를 대비해 -f 옵션 추가)
+          NEW_DATA=$(curl -s -f "$TARGET_URL" || echo "{\"error\": \"fetch_failed\", \"val\": $VALUE_PLUS_ONE}")
 
-          # 3. jq를 사용해 기존 배열 뒤에 추가 (Incremental)
-          # 만약 파일이 매우 커질 경우를 대비해 최적화된 방식 사용
-          jq --argjson new "$NEW_DATA" '. += [$new]' "$FILE_PATH" > "${FILE_PATH}.tmp" && mv "${FILE_PATH}.tmp" "$FILE_PATH"
+          # 5. jq로 Incremental Update (배열 끝에 추가)
+          jq -c --argjson new "$NEW_DATA" '. += [$new]' "$TMP_PATH" > "${TMP_PATH}.tmp" && mv "${TMP_PATH}.tmp" "$TMP_PATH"
 
-          # 4. 결과 확인 (로그 출력)
-          echo "현재 저장된 데이터 수: $(jq '. | length' $FILE_PATH)"
-          cat $FILE_PATH
+          # 6. /tmp 결과를 레포지토리로 복사
+          cp "$TMP_PATH" "$FILE_NAME"
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add 본인이름_test.json
+          
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "chore: fetch data from dynamic url ($(( $(date +%s) + 1 ))) [skip ci]"
+            git push origin main
+          fi
