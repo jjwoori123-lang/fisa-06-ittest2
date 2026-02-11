@@ -1,4 +1,4 @@
-name: Dynamic API Pipeline
+name: Minute-based API Pipeline
 
 on:
   push:
@@ -17,36 +17,33 @@ jobs:
 
       - name: Fetch API and Update /tmp File
         run: |
-          # 1. 환경 설정 (본인이름으로 수정하세요)
-          FILE_NAME="본인이름_test.json"
+          # 1. 설정
+          FILE_NAME="전진우_test.json"
           TMP_PATH="/tmp/$FILE_NAME"
           
-          # 2. i 계산 (여기서는 예시로 현재 초 단위 timestamp 사용 혹은 실행 횟수 기반)
-          # 만약 1, 2, 3 순서대로 올리고 싶다면 기존 파일의 length를 체크합니다.
-          if [ -f "$FILE_NAME" ]; then
-            I_VAL=$(jq '. | length' "$FILE_NAME")
-          else
-            I_VAL=0
-          fi
-          VALUE_PLUS_ONE=$((I_VAL + 1))
+          # 2. I_VAL을 현재 시간의 '분(Minute)'으로 설정 (00-59)
+          # 10진수 처리를 위해 10#을 붙여 08, 09분일 때 8진수 오차 방지
+          I_VAL=$(date +%M)
+          VALUE_PLUS_ONE=$((10#$I_VAL + 1))
           
           TARGET_URL="https://jsonplaceholder.typicode.com/todos/$VALUE_PLUS_ONE"
-          echo "Fetching from: $TARGET_URL"
+          echo "Current minute is $I_VAL. Fetching from: $TARGET_URL"
 
-          # 3. 기존 데이터 불러오기 (없으면 빈 배열 생성)
+          # 3. 기존 데이터 유지 (Incremental Update 준비)
           if [ -f "$FILE_NAME" ]; then
             cp "$FILE_NAME" "$TMP_PATH"
           else
             echo "[]" > "$TMP_PATH"
           fi
 
-          # 4. API 호출 (실제 API가 없으면 예시 데이터를 생성하도록 예외처리 포함)
-          NEW_DATA=$(curl -s -f "$TARGET_URL" || echo "{\"userId\": 1, \"id\": $VALUE_PLUS_ONE, \"title\": \"fallback data $VALUE_PLUS_ONE\", \"completed\": false}")
+          # 4. API 호출 (실패 시 예시 데이터 생성)
+          # 실제 결과값이 i+1 기반의 JSON이라고 가정합니다.
+          NEW_DATA=$(curl -s -f "$TARGET_URL" || echo "{\"userId\": 1, \"id\": $VALUE_PLUS_ONE, \"title\": \"Minute-based Data $VALUE_PLUS_ONE\", \"completed\": false}")
 
-          # 5. jq로 Incremental Update (기존 배열 끝에 추가)
+          # 5. jq로 기존 배열에 추가
           jq -c --argjson new "$NEW_DATA" '. += [$new]' "$TMP_PATH" > "${TMP_PATH}.tmp" && mv "${TMP_PATH}.tmp" "$TMP_PATH"
 
-          # 6. 최종 결과를 레포지토리 경로로 복사
+          # 6. 최종 결과를 다시 레포지토리 경로로 복사
           cp "$TMP_PATH" "$FILE_NAME"
 
       - name: Commit and Push
@@ -54,5 +51,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add 본인이름_test.json
-          git commit -m "chore: add data id $VALUE_PLUS_ONE [skip ci]" || echo "No changes"
+          git commit -m "chore: add data for minute $I_VAL (id: $VALUE_PLUS_ONE) [skip ci]" || echo "No changes"
           git push origin main
