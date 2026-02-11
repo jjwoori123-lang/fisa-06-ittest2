@@ -1,0 +1,35 @@
+name: Incremental Data Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # 수동으로도 실행 가능하게 설정
+
+jobs:
+  update-json:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Fetch and Update JSON
+        run: |
+          FILE_PATH="/tmp/전진우_test.json"
+          TARGET_URL="https://jsonplaceholder.typicode.com/todos/"
+
+          # 1. 기존 파일이 없으면 배열 초기화
+          if [ ! -f "$FILE_PATH" ]; then
+            echo "[]" > "$FILE_PATH"
+          fi
+
+          # 2. API로부터 데이터 가져오기
+          NEW_DATA=$(curl -s "$TARGET_URL")
+
+          # 3. jq를 사용해 기존 배열 뒤에 추가 (Incremental)
+          # 만약 파일이 매우 커질 경우를 대비해 최적화된 방식 사용
+          jq --argjson new "$NEW_DATA" '. += [$new]' "$FILE_PATH" > "${FILE_PATH}.tmp" && mv "${FILE_PATH}.tmp" "$FILE_PATH"
+
+          # 4. 결과 확인 (로그 출력)
+          echo "현재 저장된 데이터 수: $(jq '. | length' $FILE_PATH)"
+          cat $FILE_PATH
