@@ -4,6 +4,9 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+  schedule:
+    # 5분마다 실행
+    - cron: '*/5 * * * *'
 
 jobs:
   build:
@@ -17,42 +20,40 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch API and Update /tmp
+      - name: Fetch and Add Data
         run: |
           FILE_NAME="전진우_test.json"
-          TMP_PATH="/tmp/$FILE_NAME"
           
-          # 1. i(분) 계산 및 URL 설정
+          # 1. 분(Minute) 계산 및 API 호출
+          # 10#을 붙여 08, 09분 등을 8진수로 오해하는 것을 방지합니다.
           I_VAL=$(date +%M)
           VALUE_PLUS_ONE=$((10#$I_VAL + 1))
           TARGET_URL="https://jsonplaceholder.typicode.com/todos/$VALUE_PLUS_ONE"
           
-          # 2. 기존 데이터가 레포에 있으면 /tmp로 복사 (데이터 연속성)
-          if [ -f "$FILE_NAME" ]; then
-            cp "$FILE_NAME" "$TMP_PATH"
-          else
-            echo "[]" > "$TMP_PATH"
-          fi
-
-          # 3. API 데이터 호출 및 jq로 추가
+          echo "Fetching from: $TARGET_URL"
           NEW_DATA=$(curl -s -f "$TARGET_URL")
-          jq -c --argjson new "$NEW_DATA" '. += [$new]' "$TMP_PATH" > "${TMP_PATH}.tmp" && mv "${TMP_PATH}.tmp" "$TMP_PATH"
-
-          # 4. /tmp 결과물을 다시 작업 디렉토리로 복사
-          cp "$TMP_PATH" "$FILE_NAME"
+          
+          # 2. 파일 끝에 데이터 추가 (>> 사용)
+          # API 응답 데이터를 한 줄씩 파일 끝에 덧붙입니다.
+          echo "$NEW_DATA" >> "$FILE_NAME"
+          
+          # 확인용 출력
+          echo "--- 현재 파일 내용 ---"
+          cat "$FILE_NAME"
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          git add 전진우_test.json
+          git add "전진우_test.json"
           
-          # 변경사항이 있을 때만 커밋
+          # 변경사항이 있을 때만 커밋 및 푸시
           if git diff --staged --quiet; then
-            echo "변경사항 없음"
+            echo "변경사항이 없습니다."
           else
             git commit -m "chore: add data for minute $(date +%M) [skip ci]"
+            # 다른 워크플로우와 충돌 방지를 위해 pull --rebase 후 push
             git pull --rebase origin main
             git push origin main
           fi
