@@ -1,4 +1,4 @@
-name: Dynamic API Incremental Pipeline
+name: Dynamic API Pipeline
 
 on:
   push:
@@ -14,21 +14,24 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Fetch Dynamic API and Update
+      - name: Fetch API and Update /tmp File
         run: |
-          # 1. 환경 설정 (본인이름 수정 필요)
+          # 1. 환경 설정 (본인이름으로 수정하세요)
           FILE_NAME="본인이름_test.json"
           TMP_PATH="/tmp/$FILE_NAME"
           
-          # 2. i(현재시간) 계산 및 동적 URL 생성 (i+1)
-          I_TIME=$(date +%s)
-          VALUE_PLUS_ONE=$((I_TIME + 1))
-          TARGET_URL="https://jsonplaceholder.typicode.com/todos/$VALUE_PLUS_ONE"
+          # 2. i 계산 (여기서는 예시로 현재 초 단위 timestamp 사용 혹은 실행 횟수 기반)
+          # 만약 1, 2, 3 순서대로 올리고 싶다면 기존 파일의 length를 체크합니다.
+          if [ -f "$FILE_NAME" ]; then
+            I_VAL=$(jq '. | length' "$FILE_NAME")
+          else
+            I_VAL=0
+          fi
+          VALUE_PLUS_ONE=$((I_VAL + 1))
           
-          echo "Calling URL: $TARGET_URL"
+          TARGET_URL="https://jsonplaceholder.typicode.com/todos/$VALUE_PLUS_ONE"
+          echo "Fetching from: $TARGET_URL"
 
           # 3. 기존 데이터 불러오기 (없으면 빈 배열 생성)
           if [ -f "$FILE_NAME" ]; then
@@ -37,26 +40,19 @@ jobs:
             echo "[]" > "$TMP_PATH"
           fi
 
-          # 4. 동적 URL 호출하여 JSON 데이터 가져오기
-          # (서버가 응답하지 않을 경우를 대비해 -f 옵션 추가)
-          NEW_DATA=$(curl -s -f "$TARGET_URL" || echo "{\"error\": \"fetch_failed\", \"val\": $VALUE_PLUS_ONE}")
+          # 4. API 호출 (실제 API가 없으면 예시 데이터를 생성하도록 예외처리 포함)
+          NEW_DATA=$(curl -s -f "$TARGET_URL" || echo "{\"userId\": 1, \"id\": $VALUE_PLUS_ONE, \"title\": \"fallback data $VALUE_PLUS_ONE\", \"completed\": false}")
 
-          # 5. jq로 Incremental Update (배열 끝에 추가)
+          # 5. jq로 Incremental Update (기존 배열 끝에 추가)
           jq -c --argjson new "$NEW_DATA" '. += [$new]' "$TMP_PATH" > "${TMP_PATH}.tmp" && mv "${TMP_PATH}.tmp" "$TMP_PATH"
 
-          # 6. /tmp 결과를 레포지토리로 복사
+          # 6. 최종 결과를 레포지토리 경로로 복사
           cp "$TMP_PATH" "$FILE_NAME"
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
           git add 본인이름_test.json
-          
-          if git diff --staged --quiet; then
-            echo "No changes"
-          else
-            git commit -m "chore: fetch data from dynamic url ($(( $(date +%s) + 1 ))) [skip ci]"
-            git push origin main
-          fi
+          git commit -m "chore: add data id $VALUE_PLUS_ONE [skip ci]" || echo "No changes"
+          git push origin main
