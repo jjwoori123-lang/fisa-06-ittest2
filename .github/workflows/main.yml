@@ -50,6 +50,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add 본인이름_test.json
+          git add 전진우_test.json
           git commit -m "chore: add data for minute $I_VAL (id: $VALUE_PLUS_ONE) [skip ci]" || echo "No changes"
           git push origin main
